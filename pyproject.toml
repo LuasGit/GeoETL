@@ -1,0 +1,12 @@
+[tool.pytest.ini_options]
+pythonpath = ['.']
+testpaths = ['tests']
+markers = [
+  'integration: pruebas reales PostgreSQL/PostGIS en geoetl_test',
+  'functional: escenarios de características y aceptación',
+  'api: contratos HTTP y validación de filtros',
+  'performance: pruebas SQL espaciales con datos sintéticos en base de test',
+]
+filterwarnings = [
+  'ignore:Using.*with.*starlette.testclient.*:DeprecationWarning',
+]

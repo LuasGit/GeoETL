@@ -1,0 +1,126 @@
+name: geoetl
+x-etl-env: &etl_env
+  PGHOST: db
+  PGPORT: '5432'
+  PGDATABASE: ${POSTGRES_DB}
+  PGUSER: ${POSTGRES_USER}
+  PGPASSWORD: ${POSTGRES_PASSWORD}
+  DATA_DIR: /app/datos
+  PYTHONPATH: /app
+  FIRMS_MAP_KEY: ${FIRMS_MAP_KEY:-}
+  API_DB_PASSWORD: ${API_DB_PASSWORD:-}
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - '127.0.0.1:${POSTGRES_PORT:-5433}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql:/sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  etl:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    environment: *etl_env
+    depends_on:
+      db: {condition: service_healthy}
+    volumes:
+      - ./datos:/app/datos
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    environment:
+      PGHOST: db
+      PGPORT: '5432'
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: geoetl_reader
+      PGPASSWORD: ${API_DB_PASSWORD:-}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      PYTHONPATH: /app
+    command: ['uvicorn','apps.api.main:app','--host','0.0.0.0','--port','8000']
+    depends_on:
+      db: {condition: service_healthy}
+    ports:
+      - '127.0.0.1:8000:8000'
+
+  operador:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    environment:
+      <<: *etl_env
+      OPERATOR_TOKEN: ${OPERATOR_TOKEN:-}
+    command: ['uvicorn','apps.api.operador:app','--host','0.0.0.0','--port','8001']
+    depends_on:
+      db: {condition: service_healthy}
+    volumes:
+      - ./datos:/app/datos
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    ports:
+      - '127.0.0.1:5173:5173'
+    depends_on: [api, operador]
+
+  scheduler:
+    profiles: ['schedule']
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    restart: unless-stopped
+    environment:
+      <<: *etl_env
+      SCHEDULER_INTERVAL_MINUTES: ${SCHEDULER_INTERVAL_MINUTES:-360}
+      SCHEDULER_RUN_ON_START: ${SCHEDULER_RUN_ON_START:-true}
+    command: ['python','-m','pipelines.scheduler']
+    depends_on:
+      db: {condition: service_healthy}
+    volumes:
+      - ./datos:/app/datos
+
+  testdb:
+    profiles: ['test']
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: geoetl_test
+      POSTGRES_USER: geoetl_tester
+      POSTGRES_PASSWORD: test_local_only
+    volumes:
+      - ./sql:/sql:ro
+    tmpfs:
+      - /var/lib/postgresql/data:size=512m
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U geoetl_tester -d geoetl_test']
+      interval: 4s
+      timeout: 4s
+      retries: 20
+
+  e2e:
+    profiles: ['e2e']
+    image: mcr.microsoft.com/playwright:v1.56.1-noble
+    working_dir: /workspace
+    command: ['sh','-c','npm install --no-audit --no-fund && npx playwright test']
+    environment:
+      BASE_URL: http://web:5173
+    volumes:
+      - ./apps/web:/workspace
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:

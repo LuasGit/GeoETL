@@ -1,0 +1,16 @@
+.env
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+node_modules/
+apps/web/dist/
+datos/bronze/*
+datos/silver/*
+!datos/bronze/.gitkeep
+!datos/silver/.gitkeep
+.DS_Store
+apps/web/test-results/
+apps/web/playwright-report/
+.env.*
+!.env.example

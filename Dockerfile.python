@@ -1,0 +1,12 @@
+FROM python:3.12-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PYTHONPATH=/app
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY pipelines ./pipelines
+RUN mkdir -p /app/apps
+COPY apps/__init__.py ./apps/__init__.py
+COPY apps/api ./apps/api
+COPY tests ./tests
+COPY pyproject.toml ./pyproject.toml
+CMD ["python", "-m", "pipelines.cli", "--help"]
